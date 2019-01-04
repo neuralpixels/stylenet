@@ -1,5 +1,9 @@
-import time
+from __future__ import absolute_import
+from __future__ import division
+from __future__ import print_function
+from builtins import *
 
+import time
 import inspect
 import os
 import numpy as np
@@ -8,7 +12,7 @@ import skimage.io
 import skimage.transform
 import tensorflow as tf
 
-from neural_style import custom_vgg19
+import custom_vgg19
 import stylenet_core
 
 
@@ -47,13 +51,13 @@ def render(content_file, style_file,
     :param epochs:                  int of number of epochs to train
     :param output_file:             String file name of output file. %d will be replaced running number
     """
-    print "render started:"
+    print("render started:")
 
     # print info:
     frame = inspect.currentframe()
     args, _, _, values = inspect.getargvalues(frame)
     for i in args:
-        print "    %s = %s" % (i, values[i])
+        print("    %s = %s" % (i, values[i]))
 
     content_np = stylenet_core.load_image(content_file, height, width)
     style_np = stylenet_core.load_image(style_file, content_np.shape[0], content_np.shape[1])
@@ -61,8 +65,12 @@ def render(content_file, style_file,
     content_batch = np.expand_dims(content_np, 0)
     style_batch = np.expand_dims(style_np, 0)
 
-    gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.6)
-    with tf.Session(config=tf.ConfigProto(gpu_options=(gpu_options), log_device_placement=False)) as sess:
+    # gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.6)
+    # with tf.Session(config=tf.ConfigProto(gpu_options=gpu_options, log_device_placement=False)) as sess:
+
+    tf_config = tf.ConfigProto(allow_soft_placement=True, log_device_placement=False)
+    tf_config.gpu_options.allow_growth = True
+    with tf.Session(config=tf_config) as sess:
         start_time = time.time()
 
         contents = tf.constant(content_batch, dtype=tf.float32, shape=content_batch.shape)
@@ -173,10 +181,10 @@ def render(content_file, style_file,
                 diff_cost = tf.constant(.0)
             else:
                 diff_filter_h = tf.constant([0, 0, 0, 0, -1, 1, 0, 0, 0], tf.float32, [3, 3, 1, 1])
-                diff_filter_h = tf.concat(2, [diff_filter_h, diff_filter_h, diff_filter_h])
+                diff_filter_h = tf.concat([diff_filter_h, diff_filter_h, diff_filter_h], 2)
                 diff_filter_v = tf.constant([0, 0, 0, 0, -1, 0, 0, 1, 0], tf.float32, [3, 3, 1, 1])
-                diff_filter_v = tf.concat(2, [diff_filter_v, diff_filter_v, diff_filter_v])
-                diff_filter = tf.concat(3, [diff_filter_h, diff_filter_v])
+                diff_filter_v = tf.concat([diff_filter_v, diff_filter_v, diff_filter_v], 2)
+                diff_filter = tf.concat([diff_filter_h, diff_filter_v], 3)
                 filtered_input = tf.nn.conv2d(var_image, diff_filter, [1, 1, 1, 1], "VALID")
                 diff_cost = stylenet_core.l2_norm_cost(filtered_input) * 1e7
 
@@ -195,32 +203,32 @@ def render(content_file, style_file,
 
             training = optimizer.apply_gradients(gvs, global_step=global_step)
 
-        print "Net generated:", (time.time() - start_time)
+        print("Net generated:", (time.time() - start_time))
         start_time = time.time()
 
         with tf.name_scope("image_out"):
             image_out = tf.clip_by_value(tf.squeeze(var_image, [0]), 0, 1)
 
-        saver = tf.train.Saver()
+        # saver = tf.train.Saver(max_to_keep=1)
 
-        checkpoint = tf.train.get_checkpoint_state("./train")
-        if checkpoint and checkpoint.model_checkpoint_path and load_trained_image:
-            saver.restore(sess, checkpoint.model_checkpoint_path)
-            print "save restored:", checkpoint.model_checkpoint_path
-        else:
-            tf.initialize_all_variables().run()
-            print "all variables init"
+        # checkpoint = tf.train.get_checkpoint_state("./train")
+        # if checkpoint and checkpoint.model_checkpoint_path and load_trained_image:
+        #     saver.restore(sess, checkpoint.model_checkpoint_path)
+        #     print("save restored:", checkpoint.model_checkpoint_path)
+        # else:
+        sess.run(tf.global_variables_initializer())
+        print("all variables init")
 
-        print "Var init: %d" % (time.time() - start_time)
+        print("Var init: %d" % (time.time() - start_time))
 
         step_out = 0
         start_time = time.time()
-        for i in xrange(epochs):
+        for i in range(epochs):
             if i % 5 == 0:
                 img = sess.run(image_out)
                 img_out_path = output_file % step_out
                 skimage.io.imsave(img_out_path, img)
-                print "img saved: ", img_out_path
+                print("img saved: ", img_out_path)
 
             step_out, content_out, style_patch3_out, style_patch4_out, style_gram_out, diff_cost_out, cost_out \
                 , _ = sess.run(
@@ -228,19 +236,19 @@ def render(content_file, style_file,
                  training])
 
             duration = time.time() - start_time
-            print "Step %d: cost:%.10f\t(%.1f sec)" % (step_out, cost_out, duration), \
+            print("Step %d: cost:%.10f\t(%.1f sec)" % (step_out, cost_out, duration), \
                 "\t content:%.5f, style_3:%.5f, style_4:%.5f, gram:%.5f, diff_cost_out:%.5f" \
-                % (content_out, style_patch3_out, style_patch4_out, style_gram_out, diff_cost_out)
+                % (content_out, style_patch3_out, style_patch4_out, style_gram_out, diff_cost_out))
 
-            if (i + 1) % 10 == 0:
-                saved_path = saver.save(sess, "./train/saves-" + get_filename(content_file),
-                                        global_step=global_step)
-                print "net saved: ", saved_path
+            # if (i + 1) % 10 == 0:
+            #     saved_path = saver.save(sess, "./train/saves-" + get_filename(content_file),
+            #                             global_step=global_step)
+            #     print("net saved: ", saved_path)
 
         img = sess.run(image_out)
         img_out_path = output_file % step_out
         skimage.io.imsave(img_out_path, img)
-        print "img saved: ", img_out_path
+        print("img saved: ", img_out_path)
 
 
 def render_gen(content_file, style_file,
@@ -248,7 +256,8 @@ def render_gen(content_file, style_file,
                random_init=False, load_saved_mapping=True, load_trained_image=False, blur_mapping=True,
                height=None, width=None,
                content_ratio=0, style3_ratio=3., style4_ratio=1., gram_ratio=0.001, diff_ratio=0.,
-               gen_epochs=80, max_gen=3, pyramid=True, max_reduction_ratio=.8, final_epochs=200):
+               gen_epochs=80, max_gen=3, pyramid=True, max_reduction_ratio=.8, final_epochs=200
+               ):
     """
     Render the image by generation method.
     - Best used if the style has low similarity with the content.
@@ -280,22 +289,24 @@ def render_gen(content_file, style_file,
     :param max_reduction_ratio:     float32 of 0.0 to 1.0 of percentage of first reduction ratio in pyramid
     :param final_epochs:            int of epoch of training last generation
     """
-    for gen in xrange(max_gen):
+    root_dir = os.path.dirname(__file__)
+    os.makedirs(os.path.join(root_dir, 'train'), exist_ok=True)
+    for gen in range(max_gen):
         if gen is 0:
             gen_content_file = content_file
             height = stylenet_core.load_image(content_file, height, width).shape[0]
         else:
-            gen_content_file = ("./train/output-g" + str(gen - 1) + "-%d.jpg") % gen_epochs
+            gen_content_file = os.path.join(root_dir, ("train/output-g" + str(gen - 1) + "-%d.jpg") % gen_epochs)
 
-        output_file = "./train/output-g" + str(gen) + "-%d.jpg"
+        output_file = os.path.join(root_dir, "train/output-g" + str(gen) + "-%d.jpg")
         output_file_final = output_file % gen_epochs
         if os.path.isfile(output_file_final):
-            print output_file_final, "exist. move to next generation"
+            print(output_file_final, "exist. move to next generation")
             continue
 
         tf.reset_default_graph()
         ot = time.time()
-        print "----------- %d generation started -----------" % gen
+        print("----------- %d generation started -----------" % gen)
 
         if pyramid and gen == max_gen - 1:
             h = height
@@ -328,15 +339,36 @@ def render_gen(content_file, style_file,
             diff_ratio=diff_ratio,
             epochs=epochs,
             output_file=output_file)
-        print "----------- %d generation finished in %d sec -----------\n" % (gen, time.time() - ot)
+        print("----------- %d generation finished in %d sec -----------\n" % (gen, time.time() - ot))
 
 
 if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description='StylePatch',
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
+    add_arg = parser.add_argument
+
+    add_arg('--gpu', default=0, type=int, help='GPU to use')
+    args = parser.parse_args()
+
+    if args.gpu >= 0:
+        os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+        os.environ["CUDA_VISIBLE_DEVICES"] = "{}".format(args.gpu)
+
+    root_dir = os.path.dirname(__file__)
     # for testing:
 
     # no generation
     # render("./test_data/cat_h.jpg", "./test_data/cat-water-colour.jpg", height=500)
 
     # with generation
-    render_gen("./images/husky_paint.jpg", "./test_data/husky_real.jpg",
-               "./images/husky_paint_region.jpg", "./test_data/husky_real_region.jpg", height=500)
+    render_gen(
+        content_file=os.path.join(root_dir, "images/husky_paint.jpg"),
+        style_file=os.path.join(root_dir, "images/husky_real.jpg"),
+        content_region_file=os.path.join(root_dir, "images/husky_paint_region.jpg"),
+        style_region_file=os.path.join(root_dir, "images/husky_real_region.jpg"),
+        height=500
+    )
